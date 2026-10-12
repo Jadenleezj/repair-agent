@@ -9,6 +9,7 @@ from fastapi import FastAPI, HTTPException, Query
 from .models import ApprovalRequest, CaseResponse, CreateCaseRequest, IssueType
 from .playbooks import PLAYBOOKS
 from .runtime import RepairRuntime
+from .platform_tools import PlatformToolName
 
 
 DEFAULT_DB = Path(os.getenv("REPAIR_AGENT_DB", "data/repair_agent.db"))
@@ -61,10 +62,14 @@ def create_app(runtime: RepairRuntime | None = None) -> FastAPI:
         return app.state.runtime.knowledge.search(query, issue_type, limit)
 
     # 列出五个平台模拟工具；工具均为只读，参数统一为运单号。
-
+    @app.get("/tools/platforms")
+    def platform_catalog() -> list[dict]:
+        return app.state.runtime.tools.platforms.catalog()
 
     # 单独调用一个平台工具，便于调试结果或模拟故障，不触发修复。
-
+    @app.get("/tools/platforms/{tool_name}")
+    def query_platform(tool_name: PlatformToolName, waybill_id: str = Query(pattern=r"^W[0-9]{4,}$")) -> dict:
+        return app.state.runtime.tools.call_read_tool(tool_name, waybill_id)
 
     # 返回所有允许选择的修复方案及风险元数据。
     @app.get("/playbooks")

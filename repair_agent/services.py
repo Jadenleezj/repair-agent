@@ -5,6 +5,7 @@ import re
 from typing import Any
 
 from .models import Evidence
+from .platform_tools import MockPlatformTools, PLATFORM_TOOLS
 from .playbooks import get_playbook
 from .repository import Repository, utc_now
 
@@ -24,6 +25,7 @@ class ToolService:
     # 注入业务仓储，供只读查询和受控修复共用。
     def __init__(self, repository: Repository):
         self.repo = repository
+        self.platforms = MockPlatformTools(repository)
 
     # 统一封装工具结果，包含证据 ID、事实类型、查询状态及权威性标记。
     def _evidence(
@@ -38,6 +40,8 @@ class ToolService:
 
     # 按白名单工具名称读取运单、任务、事件或看板，返回结构化证据；未知工具抛错。
     def call_read_tool(self, tool: str, waybill_id: str) -> Evidence:
+        if tool in PLATFORM_TOOLS:
+            return self.platforms.query(tool, waybill_id)
         with self.repo.lock:
             if tool == "GET_WAYBILL":
                 row = self.repo.conn.execute(

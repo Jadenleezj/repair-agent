@@ -24,3 +24,7 @@ python -m repair_agent.knowledge examples/historical_cases.json
 ```
 
 支持 JSON/JSONL 导入，`GET /knowledge/search?query=签收` 可预览引用。真实模型诊断收到参考经验，规则推理仍依据当前证据。
+
+## 五种模拟平台工具
+
+日志、线上数据、配置中心、定时任务和 Hive 工具均为只读。平台快照位于 `repair_agent/platform_fixtures.json`；线上数据读取当前演示库，Hive 是历史快照。`GET /tools/platforms` 查看目录，`GET /tools/platforms/{tool_name}?waybill_id=W1001` 调用工具。

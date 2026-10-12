@@ -95,6 +95,8 @@ class ToolPlanResult(BaseModel):
     next_tool: Literal[
         "GET_WAYBILL", "GET_DELIVERY_TASK", "QUERY_OPERATION_EVENTS",
         "GET_DISPATCH_PROJECTION",
+        "QUERY_LOG_PLATFORM", "QUERY_ONLINE_DATA", "QUERY_CONFIG_CENTER",
+        "QUERY_SCHEDULER", "QUERY_HIVE_TABLE",
     ] | None
     reason: str
 

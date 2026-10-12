@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from .models import DiagnosisResult, Evidence, RepairState, ToolPlanResult, TriageResult
 from .playbooks import PLAYBOOKS
+from .platform_tools import PLATFORM_TOOLS
 from .services import extract_waybill_id
 
 
@@ -60,7 +61,7 @@ class RuleReasoner:
     # 从未查询的只读工具中选择下一项；不允许规划写工具。
     def plan_next_tool(self, state: RepairState) -> str | None:
         queried = set(state.get("queried_tools", []))
-        for tool in self.TOOL_PLAN.get(state.get("issue_type", "UNKNOWN"), []):
+        for tool in self.TOOL_PLAN.get(state.get("issue_type", "UNKNOWN"), []) + list(PLATFORM_TOOLS):
             if tool not in queried:
                 return tool
         return None
@@ -182,7 +183,7 @@ class HttpJsonReasoner:
     # 从未查询的只读工具中选择下一项；不允许规划写工具。
     def plan_next_tool(self, state: RepairState) -> str | None:
         allowed = [
-            x for x in self.fallback.TOOL_PLAN.get(state.get("issue_type", "UNKNOWN"), [])
+            x for x in self.fallback.TOOL_PLAN.get(state.get("issue_type", "UNKNOWN"), []) + list(PLATFORM_TOOLS)
             if x not in set(state.get("queried_tools", []))
         ]
         if not allowed:
@@ -195,7 +196,7 @@ class HttpJsonReasoner:
                 {"issue_type": state.get("issue_type"), "allowed_tools": allowed,
                  "queried_tools": state.get("queried_tools", []),
                  "evidence": state.get("evidence", []),
-                 },
+                 "platform_tools": [{"name": k, "description": v[0]} for k, v in PLATFORM_TOOLS.items()]},
             )
             return result.next_tool if result.next_tool in allowed else allowed[0]
         except Exception:
