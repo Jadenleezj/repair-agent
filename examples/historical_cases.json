@@ -1,0 +1,14 @@
+[
+  {
+    "case_id": "DEMO-HISTORY-001",
+    "title": "演示案例：签收成功但运单仍在派送中",
+    "issue_type": "DELIVERY_TASK_WAYBILL_MISMATCH",
+    "description": "签收扫描成功，派送任务已完成，核心运单仍为派送中。",
+    "root_cause": "签收事件未应用到核心运单",
+    "repair_steps": ["核实当前运单、派送任务与签收事件", "审批后执行签收状态修复", "独立查询验证状态"],
+    "prerequisites": ["当前存在成功签收扫描", "任务已完成", "当前运单仍为派送中"],
+    "verification": "核心运单状态为 DELIVERED",
+    "playbook_id": "APPLY_DELIVERY_COMPLETION_V1",
+    "source": "synthetic-demo：仅作格式演示，非真实历史数据"
+  }
+]

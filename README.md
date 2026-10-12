@@ -14,3 +14,13 @@ python -m unittest discover -s tests -v
 ```
 
 HTTP 服务默认地址为 `http://127.0.0.1:8000`，接口文档位于 `/docs`。`POST /cases` 同步创建工单，待审批时使用 `POST /cases/{case_id}/approval`。模型只负责理解、规划与诊断，门禁与执行由程序控制。
+
+## 历史经验 RAG
+
+使用中文双字切词与 BM25 检索，历史经验与当前业务证据分开保存。仅在当前事实通过门禁时允许修复；检索得分不等于正确率。示例均为合成数据，不自动导入。
+
+```bash
+python -m repair_agent.knowledge examples/historical_cases.json
+```
+
+支持 JSON/JSONL 导入，`GET /knowledge/search?query=签收` 可预览引用。真实模型诊断收到参考经验，规则推理仍依据当前证据。

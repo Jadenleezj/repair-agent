@@ -7,6 +7,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, interrupt
 
+from .knowledge import KnowledgeStore
 from .models import RepairState
 from .playbooks import get_playbook
 from .reasoning import Reasoner, RuleReasoner
@@ -39,6 +40,7 @@ def build_graph(
     tools: ToolService,
     *,
     reasoner: Reasoner | None = None,
+    knowledge: KnowledgeStore | None = None,
     checkpointer: BaseCheckpointSaver | None = None,
 ):
     reasoner = reasoner or RuleReasoner()
@@ -63,15 +65,22 @@ def build_graph(
     # 缺信息走补充信息分支，未知类型结束，其余请求进入历史检索。
     def route_after_triage(
         state: RepairState,
-    ) -> Literal["need_info", "plan_investigation", "finalize"]:
+    ) -> Literal["need_info", "retrieve_knowledge", "finalize"]:
         if state.get("missing_information"):
             return "need_info"
         if state.get("issue_type") == "UNKNOWN":
             return "finalize"
-        return "plan_investigation"
+        return "retrieve_knowledge"
 
     # 检索同类历史经验并保存引用；失败时继续实时调查，历史不作为当前证据。
-
+    def retrieve_knowledge(state: RepairState) -> dict:
+        try:
+            hits = knowledge.search(state["raw_request"], state.get("issue_type")) if knowledge else []
+            message = f"retrieve_knowledge: references={[h['case']['case_id'] for h in hits]}"
+        except Exception:
+            hits = []
+            message = "retrieve_knowledge: unavailable; continuing with live evidence only"
+        return {"knowledge_hits": hits, "audit": append_audit(state, message)}
 
     # 记录缺失输入并返回待补充状态，不执行调查或修复。
     def need_info(state: RepairState) -> dict:
@@ -290,7 +299,7 @@ def build_graph(
 
     builder = StateGraph(RepairState)
     for name, node in {
-        "parse_and_triage": parse_and_triage, "need_info": need_info,
+        "parse_and_triage": parse_and_triage, "retrieve_knowledge": retrieve_knowledge, "need_info": need_info,
         "plan_investigation": plan_investigation, "execute_read_tool": execute_read_tool,
         "diagnose": diagnose, "assess_decision": assess_decision,
         "approval": approval, "revalidate": revalidate, "execute": execute,
@@ -300,6 +309,7 @@ def build_graph(
 
     builder.add_edge(START, "parse_and_triage")
     builder.add_conditional_edges("parse_and_triage", route_after_triage)
+    builder.add_edge("retrieve_knowledge", "plan_investigation")
     builder.add_edge("need_info", END)
     builder.add_conditional_edges("plan_investigation", route_plan)
     builder.add_edge("execute_read_tool", "plan_investigation")

@@ -11,18 +11,20 @@ from .graph import build_graph, resume_after_approval
 from .reasoning import Reasoner, reasoner_from_env
 from .repository import Repository
 from .services import ToolService
+from .knowledge import KnowledgeStore
 
 
 class RepairRuntime:
     # 初始化业务仓储、推理器和持久化检查点，编译工作流。
-    def __init__(self, db_path: str | Path, reasoner: Reasoner | None = None):
+    def __init__(self, db_path: str | Path, reasoner: Reasoner | None = None, knowledge_path: str | Path | None = None):
         self.db_path = str(db_path)
         self.repository = Repository(self.db_path)
         self.tools = ToolService(self.repository)
+        self.knowledge = KnowledgeStore(knowledge_path or os.getenv("REPAIR_KNOWLEDGE_DB") or (self.db_path + ".knowledge.db"))
         self.reasoner = reasoner or reasoner_from_env()
         self.checkpoint_conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self.checkpointer = SqliteSaver(self.checkpoint_conn)
-        self.graph = build_graph(self.tools, reasoner=self.reasoner, checkpointer=self.checkpointer)
+        self.graph = build_graph(self.tools, reasoner=self.reasoner, knowledge=self.knowledge, checkpointer=self.checkpointer)
         self.invoke_lock = threading.RLock()
 
     # 工单 ID 同时作为检查点线程 ID，支持重启后恢复审批。

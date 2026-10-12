@@ -52,7 +52,13 @@ def create_app(runtime: RepairRuntime | None = None) -> FastAPI:
 
 
     # 根据查询、可选异常类型和数量限制预览历史引用，不执行修复。
-
+    @app.get("/knowledge/search")
+    def search_knowledge(
+        query: str = Query(min_length=1, max_length=8000),
+        issue_type: IssueType | None = None,
+        limit: int = Query(default=3, ge=1, le=10),
+    ) -> list[dict]:
+        return app.state.runtime.knowledge.search(query, issue_type, limit)
 
     # 列出五个平台模拟工具；工具均为只读，参数统一为运单号。
 

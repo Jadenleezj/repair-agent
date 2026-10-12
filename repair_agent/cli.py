@@ -19,6 +19,7 @@ def summary(result: dict[str, Any]) -> dict[str, Any]:
     return {
         "case_id": result["case_id"], "waybill_id": state.get("waybill_id"),
         "issue_type": state.get("issue_type"), "root_cause": state.get("root_cause"),
+        "knowledge_hits": state.get("knowledge_hits", []),
         "confidence": state.get("confidence"),
         "confidence_breakdown": state.get("confidence_breakdown"),
         "decision": state.get("decision"), "decision_reasons": state.get("decision_reasons"),

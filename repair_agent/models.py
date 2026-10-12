@@ -43,6 +43,7 @@ class RepairState(TypedDict, total=False):
     claims: list[str]
     missing_information: list[str]
     evidence: list[Evidence]
+    knowledge_hits: list[dict[str, Any]]
     missing_evidence: list[str]
     queried_tools: list[str]
     next_tool: str | None
