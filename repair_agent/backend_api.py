@@ -12,6 +12,8 @@ from .repository import Repository
 
 # 默认本地 HTTP 传输使用的路由适配器，和独立服务器共用同一后端服务实现。
 def handle_mock_request(backend: MockRepairBackend, request: httpx.Request) -> httpx.Response:
+    if request.method=='GET' and request.url.path=='/repair-executions':
+        return httpx.Response(200,json=backend.execution_status(request.url.params.get('idempotency_key','')))
     reverse = {path: pid for pid,path in REPAIR_ENDPOINTS.items()}
     if request.method == 'GET' and request.url.path.startswith('/evidence/'):
         tool = request.url.path.rsplit('/',1)[-1]
@@ -49,7 +51,9 @@ def create_backend_app(repository: Repository | None = None) -> FastAPI:
         return backend.call_read_tool(tool,waybill_id)
 
     # 修复请求超时后只查询记录，不触发重复写入。
-
+    @app.get('/repair-executions')
+    def execution_status(idempotency_key: str = Query(min_length=1,max_length=200)):
+        return backend.execution_status(idempotency_key)
 
     # 固定端点映射修复方案，后端独立执行版本和业务前提校验及幂等事务。
     def execute(command: RepairCommand, endpoint: str, key: str | None):

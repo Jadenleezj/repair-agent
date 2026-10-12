@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import json
 import os
+import logging
+import time
+from .reliability import CURRENT_RUN, RunStopped
+from .http_io import read_json_response
 from typing import Protocol, TypeVar
 
 import httpx
@@ -139,6 +143,7 @@ class HttpJsonReasoner:
 
     # 配置模型端点、HTTP 超时和认证头，并建立本地规则回退。
     def __init__(self, base_url: str, api_key: str, model: str):
+        self.guard = None
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.client = httpx.Client(
@@ -149,20 +154,37 @@ class HttpJsonReasoner:
 
     # 调用 JSON Schema 结构化输出端点，并用 Pydantic 校验返回内容。
     def _complete(self, output_model: type[ModelT], system: str, payload: dict) -> ModelT:
-        body = {
-            "model": self.model, "temperature": 0,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": json.dumps(payload, ensure_ascii=False, default=str)},
-            ],
-            "response_format": {"type": "json_schema", "json_schema": {
-                "name": output_model.__name__.lower(), "strict": True,
-                "schema": output_model.model_json_schema(),
-            }},
+        schema_name = output_model.__name__.lower()
+        payload_text=json.dumps(payload,ensure_ascii=False,default=str)
+        control=CURRENT_RUN.get()
+        if control:
+            control.check()
+        body={
+            "model":self.model,"temperature":0,
+            "messages":[{"role":"system","content":system},{"role":"user","content":payload_text}],
+            "response_format":{"type":"json_schema","json_schema":{
+                "name":schema_name,"strict":True,"schema":output_model.model_json_schema()}},
         }
-        response = self.client.post(f"{self.base_url}/chat/completions", json=body)
-        response.raise_for_status()
-        content = response.json()["choices"][0]["message"]["content"]
+        # 无专用 tokenizer 时按完整请求的 UTF-8 字节保守预留，包括 schema。
+        estimated_input=max(1,len(json.dumps(body,ensure_ascii=False).encode('utf-8')))
+        # 每次重试都重新预留预算，并向模型传入剩余输出上限。
+        def request():
+            if control:
+                control.consume(estimated_input)
+                remaining=control.settings.token_budget-control.tokens
+                if remaining<1:raise RunStopped('TOKEN_BUDGET_EXCEEDED')
+                body['max_tokens']=min(4096,remaining)
+                control.model_request()
+            timeout=min(control.settings.model_timeout_seconds,max(.01,control.deadline-time.monotonic())) if control else 20
+            limit=self.guard.settings.output_bytes*8 if self.guard else 256000
+            return read_json_response(self.client,'POST',f"{self.base_url}/chat/completions",
+                                      json=body,timeout=timeout,max_bytes=limit)
+        data=self.guard.call('llm',request,self.guard.settings.read_retries) if self.guard else request()
+        content = data["choices"][0]["message"]["content"]
+        if control:
+            actual=data.get('usage',{}).get('total_tokens')
+            control.consume(max(0,int(actual)-estimated_input) if actual is not None else max(1,len(content.encode('utf-8'))))
+        if self.guard:self.guard.metrics.increment('llm.tokens',int(data.get('usage',{}).get('total_tokens') or estimated_input+len(content)//2))
         return output_model.model_validate_json(content)
 
     # 根据业务文本提取运单与异常类型，返回缺失信息；远程推理失败时回退规则。
@@ -177,7 +199,10 @@ class HttpJsonReasoner:
                     "DISPATCH_PROJECTION_STALE", "UNKNOWN",
                 ]},
             )
-        except Exception:
+        except RunStopped:raise
+        except Exception as exc:
+            logging.getLogger(__name__).warning('LLM triage fallback: %s',type(exc).__name__)
+            if self.guard:self.guard.metrics.increment('llm.fallback.triage')
             return self.fallback.triage(text)
 
     # 从未查询的只读工具中选择下一项；不允许规划写工具。
@@ -199,7 +224,10 @@ class HttpJsonReasoner:
                  "platform_tools": [{"name": k, "description": v[0]} for k, v in PLATFORM_TOOLS.items()]},
             )
             return result.next_tool if result.next_tool in allowed else allowed[0]
-        except Exception:
+        except RunStopped:raise
+        except Exception as exc:
+            logging.getLogger(__name__).warning('LLM planning fallback: %s',type(exc).__name__)
+            if self.guard:self.guard.metrics.increment('llm.fallback.planning')
             return allowed[0]
 
     # 依据当前证据提出根因与白名单方案；历史引用仅作参考，不能替代事实。
@@ -222,7 +250,10 @@ class HttpJsonReasoner:
             if result.playbook_id is not None and result.playbook_id not in PLAYBOOKS:
                 raise ValueError("model selected a non-allow-listed playbook")
             return result
-        except Exception:
+        except RunStopped:raise
+        except Exception as exc:
+            logging.getLogger(__name__).warning('LLM diagnosis fallback: %s',type(exc).__name__)
+            if self.guard:self.guard.metrics.increment('llm.fallback.diagnosis')
             return self.fallback.diagnose(state)
 
 

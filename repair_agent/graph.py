@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from typing import Any, Literal
+import time
+from functools import wraps
+from .reliability import CURRENT_RUN
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver
@@ -47,6 +50,7 @@ def build_graph(
 
     # 理解原始请求并初始化调查状态；提取运单、异常类型和缺失信息。
     def parse_and_triage(state: RepairState) -> dict:
+        if CURRENT_RUN.get(): CURRENT_RUN.get().reasoning()
         result = reasoner.triage(state["raw_request"])
         return {
             "waybill_id": result.waybill_id,
@@ -76,6 +80,10 @@ def build_graph(
     def retrieve_knowledge(state: RepairState) -> dict:
         try:
             hits = knowledge.search(state["raw_request"], state.get("issue_type")) if knowledge else []
+            if tools.artifacts and hits:
+                bounded=tools.artifacts.bound({'evidence_id':'HISTORY','source':'knowledge','fact_type':'HISTORICAL_REFERENCES','value':hits,'status':'FOUND','authoritative':False})
+                if bounded['status']=='UNAVAILABLE':
+                    return {'knowledge_hits':[], 'knowledge_artifact':bounded['value'], 'audit':append_audit(state,'retrieve_knowledge: oversized references archived')}
             message = f"retrieve_knowledge: references={[h['case']['case_id'] for h in hits]}"
         except Exception:
             hits = []
@@ -96,6 +104,7 @@ def build_graph(
         if state.get("investigation_round", 0) >= 9:
             next_tool = None
         else:
+            if CURRENT_RUN.get(): CURRENT_RUN.get().reasoning()
             next_tool = reasoner.plan_next_tool(state)
         return {
             "next_tool": next_tool,
@@ -110,6 +119,7 @@ def build_graph(
     # 执行只读工具，将证据、已查询工具和轮次写回图状态。
     def execute_read_tool(state: RepairState) -> dict:
         tool = state["next_tool"] or ""
+        if CURRENT_RUN.get(): CURRENT_RUN.get().tool(tool,state["waybill_id"] or "")
         evidence = tools.call_read_tool(tool, state["waybill_id"] or "")
         queried = [*state.get("queried_tools", []), tool]
         all_evidence = [*state.get("evidence", []), evidence]
@@ -125,6 +135,7 @@ def build_graph(
 
     # 调用推理器诊断，计算证据缺项与置信度分项，并记录诊断时运单版本。
     def diagnose(state: RepairState) -> dict:
+        if CURRENT_RUN.get(): CURRENT_RUN.get().reasoning()
         result = reasoner.diagnose(state)
         required = REQUIRED_FACTS.get(state.get("issue_type", "UNKNOWN"), set())
         found = found_fact_types(state)
@@ -257,17 +268,21 @@ def build_graph(
 
     # 以工单和 Playbook 组成幂等键，执行修复并记录执行结果。
     def execute(state: RepairState) -> dict:
+        control = CURRENT_RUN.get()
+        if control:
+            control.check()
+            control.before_write()
+            control.write_started = True
         result = tools.execute_playbook(
             case_id=state["case_id"], waybill_id=state["waybill_id"] or "",
             playbook_id=state["playbook_id"] or "",
             expected_version=state["diagnosed_version"] or -1,
             idempotency_key=f"{state['case_id']}:{state['playbook_id']}",
         )
+        if control: control.write_completed = True
         return {
             "execution_result": result,
-            "status": "EXECUTED" if result["success"] else (
-                "EXECUTION_OUTCOME_UNKNOWN" if result.get("outcome_unknown") else "EXECUTION_FAILED"
-            ),
+            "status": "EXECUTED" if result["success"] else ("EXECUTION_OUTCOME_UNKNOWN" if result.get("outcome_unknown") else "EXECUTION_FAILED"),
             "audit": append_audit(state, f"execute: {result}"),
         }
 
@@ -305,7 +320,22 @@ def build_graph(
         "approval": approval, "revalidate": revalidate, "execute": execute,
         "verify": verify, "finalize": finalize,
     }.items():
-        builder.add_node(name, node)
+        # 所有节点前后检查任务预算；慢请求返回后不允许继续使用过期结果。
+        def guarded(fn, stage):
+            @wraps(fn)
+            # 取消及预算异常直接向 Worker 传播，并累积固定阶段名耗时。
+            def run(state):
+                control=CURRENT_RUN.get()
+                if control:control.check()
+                started=time.monotonic()
+                try:
+                    result=fn(state)
+                    if control:control.check()
+                    return result
+                finally:
+                    if tools.guard:tools.guard.metrics.observe('node.'+stage,time.monotonic()-started)
+            return run
+        builder.add_node(name, guarded(node,name))
 
     builder.add_edge(START, "parse_and_triage")
     builder.add_conditional_edges("parse_and_triage", route_after_triage)

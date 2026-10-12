@@ -24,6 +24,8 @@ class ToolService:
 
     # 注入业务仓储，供只读查询和受控修复共用。
     def __init__(self, repository: Repository, backend: RepairBackendClient | None = None):
+        self.guard = None
+        self.artifacts = None
         self.repo = repository
         self.backend = backend or RepairBackendClient.local(repository)
         self.platforms = MockPlatformTools(repository)
@@ -41,7 +43,21 @@ class ToolService:
 
     # 按白名单工具名称读取运单、任务、事件或看板，返回结构化证据；未知工具抛错。
     def call_read_tool(self, tool: str, waybill_id: str) -> Evidence:
-        return self._read_unbounded(tool, waybill_id)
+        from .reliability import DependencyUnavailable, RunStopped
+        try:
+            operation=lambda: self._read_unbounded(tool,waybill_id)
+            # 业务读取的 HTTP 重试已在客户端实现，避免叠加重试次数。
+            result=self.guard.call(tool,operation,0) if self.guard else operation()
+        except RunStopped:raise
+        except Exception as exc:
+            if tool not in PLATFORM_TOOLS:raise
+            result=self._evidence(tool,PLATFORM_TOOLS[tool][1],
+                {'error':type(exc).__name__,'message':str(exc)[:300]},'UNAVAILABLE',False)
+        if self.artifacts:
+            bounded=self.artifacts.bound(result)
+            if bounded is not result and self.guard:self.guard.metrics.increment('tools.oversized')
+            return bounded
+        return result
 
     # 读取平台或业务后端的原始证据，容量与输出限制由上层统一处理。
     def _read_unbounded(self, tool: str, waybill_id: str) -> Evidence:

@@ -13,7 +13,7 @@ repair-agent-api
 python -m unittest discover -s tests -v
 ```
 
-HTTP 服务默认地址为 `http://127.0.0.1:8000`，接口文档位于 `/docs`。`POST /cases` 同步创建工单，待审批时使用 `POST /cases/{case_id}/approval`。模型只负责理解、规划与诊断，门禁与执行由程序控制。
+HTTP 服务默认地址为 `http://127.0.0.1:8000`，接口文档位于 `/docs`。`POST /cases` 默认返回 HTTP 202 并进入持久化队列，待审批时使用 `POST /cases/{case_id}/approval`。模型只负责理解、规划与诊断，门禁与执行由程序控制。
 
 ## 历史经验 RAG
 
@@ -38,3 +38,9 @@ uvicorn repair_agent.backend_api:create_backend_app --factory --host 127.0.0.1 -
 ```
 
 `REPAIR_BACKEND_API_KEY` 可配置认证头；后端必须实现实际的幂等、版本与业务前提校验。
+
+## 稳定性与长期运行
+
+新增有界任务队列、Worker、心跳租约、任务预算与取消、读请求退避熔断、未知修复结果只读对账、输出归档与终态清理。审批默认异步返回 HTTP 202；`?wait=true` 为同步演示模式。
+
+`GET /health`、`GET /ready` 和 `GET /metrics` 用于监控。详细配置、故障处理和适用边界见 [稳定性与长期运行](docs/稳定性与长期运行.md)。

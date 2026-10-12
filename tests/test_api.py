@@ -23,7 +23,7 @@ class ApiTests(unittest.TestCase):
 
     # 验证 API 创建工单、审批修复和读取审计时间线的完整链路。
     def test_create_approve_and_read_timeline(self):
-        created = self.client.post("/cases", json={
+        created = self.client.post("/cases?wait=true", json={
             "message": "运单 W1001 线下已签收，但系统还是派送中",
             "requester_id": "business-user",
         })
@@ -31,7 +31,7 @@ class ApiTests(unittest.TestCase):
         case_id = created.json()["case_id"]
         self.assertEqual(created.json()["status"], "WAITING_APPROVAL")
 
-        approved = self.client.post(f"/cases/{case_id}/approval", json={
+        approved = self.client.post(f"/cases/{case_id}/approval?wait=true", json={
             "actor_id": "developer-1", "approved": True, "comment": "evidence checked"
         })
         self.assertEqual(approved.status_code, 200)
@@ -44,11 +44,11 @@ class ApiTests(unittest.TestCase):
 
     # 验证已处理工单不能再次审批。
     def test_duplicate_approval_is_rejected(self):
-        created = self.client.post("/cases", json={"message": "运单 W1001 线下已签收，但系统还是派送中"})
+        created = self.client.post("/cases?wait=true", json={"message": "运单 W1001 线下已签收，但系统还是派送中"})
         case_id = created.json()["case_id"]
         payload = {"actor_id": "developer-1", "approved": False}
-        self.assertEqual(self.client.post(f"/cases/{case_id}/approval", json=payload).status_code, 200)
-        self.assertEqual(self.client.post(f"/cases/{case_id}/approval", json=payload).status_code, 409)
+        self.assertEqual(self.client.post(f"/cases/{case_id}/approval?wait=true", json=payload).status_code, 200)
+        self.assertEqual(self.client.post(f"/cases/{case_id}/approval?wait=true", json=payload).status_code, 409)
 
 
 if __name__ == "__main__":

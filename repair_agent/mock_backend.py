@@ -156,7 +156,12 @@ class MockRepairBackend:
             return result
 
     # 按幂等键返回后端执行记录，供请求响应丢失后的结果核实。
-
+    def execution_status(self,idempotency_key):
+        with self.repo.lock:
+            row=self.repo.conn.execute('SELECT * FROM repair_executions WHERE idempotency_key=?',(idempotency_key,)).fetchone()
+        if not row:return {'status':'NOT_FOUND'}
+        return {'status':'FOUND','record':{'case_id':row['case_id'],'playbook_id':row['playbook_id'],
+                'result':json.loads(row['result_json'])}}
 
     # 通过独立只读查询检查修复后的业务条件，返回逐项检查及总体成功标记。
     def verify(self, waybill_id: str, playbook_id: str) -> dict[str, Any]:
