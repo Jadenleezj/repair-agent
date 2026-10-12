@@ -1,0 +1,23 @@
+[project]
+name = "delivery-state-repair-agent"
+version = "0.2.0"
+description = "A safe LangGraph agent for delivery-operation state reconciliation"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115,<1.0",
+  "httpx>=0.28,<1.0",
+  "langgraph>=1.0,<2.0",
+  "langgraph-checkpoint-sqlite>=3.0,<4.0",
+  "uvicorn>=0.34,<1.0",
+]
+
+[project.scripts]
+repair-agent = "repair_agent.cli:main"
+repair-agent-api = "repair_agent.api:run"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["repair_agent*"]
