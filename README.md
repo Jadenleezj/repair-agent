@@ -28,3 +28,13 @@ python -m repair_agent.knowledge examples/historical_cases.json
 ## 五种模拟平台工具
 
 日志、线上数据、配置中心、定时任务和 Hive 工具均为只读。平台快照位于 `repair_agent/platform_fixtures.json`；线上数据读取当前演示库，Hive 是历史快照。`GET /tools/platforms` 查看目录，`GET /tools/platforms/{tool_name}?waybill_id=W1001` 调用工具。
+
+## 封装修复接口
+
+Agent 通过固定 HTTP 端点调用后端修复接口，不直接执行写 SQL。设置 `REPAIR_BACKEND_BASE_URL` 连接实际后端，默认使用本地 HTTP 模拟传输。写请求携带幂等键及诊断版本，超时保留结果未知，不自动重发。
+
+```bash
+uvicorn repair_agent.backend_api:create_backend_app --factory --host 127.0.0.1 --port 8001
+```
+
+`REPAIR_BACKEND_API_KEY` 可配置认证头；后端必须实现实际的幂等、版本与业务前提校验。

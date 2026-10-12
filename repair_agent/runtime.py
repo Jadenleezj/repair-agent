@@ -12,6 +12,7 @@ from .reasoning import Reasoner, reasoner_from_env
 from .repository import Repository
 from .services import ToolService
 from .knowledge import KnowledgeStore
+from .backend_client import RepairBackendClient
 
 
 class RepairRuntime:
@@ -19,7 +20,9 @@ class RepairRuntime:
     def __init__(self, db_path: str | Path, reasoner: Reasoner | None = None, knowledge_path: str | Path | None = None):
         self.db_path = str(db_path)
         self.repository = Repository(self.db_path)
-        self.tools = ToolService(self.repository)
+        backend_url = os.getenv("REPAIR_BACKEND_BASE_URL")
+        backend = RepairBackendClient(backend_url, api_key=os.getenv("REPAIR_BACKEND_API_KEY")) if backend_url else RepairBackendClient.local(self.repository)
+        self.tools = ToolService(self.repository, backend=backend)
         self.knowledge = KnowledgeStore(knowledge_path or os.getenv("REPAIR_KNOWLEDGE_DB") or (self.db_path + ".knowledge.db"))
         self.reasoner = reasoner or reasoner_from_env()
         self.checkpoint_conn = sqlite3.connect(self.db_path, check_same_thread=False)
@@ -78,5 +81,6 @@ class RepairRuntime:
     # 释放模型客户端、检查点和业务仓储连接。
     def close(self) -> None:
         if hasattr(self.reasoner, 'client'): self.reasoner.client.close()
+        self.tools.backend.close()
         self.checkpoint_conn.close()
         self.repository.conn.close()
