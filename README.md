@@ -4,33 +4,43 @@
 
 中文入口与代码说明见 [项目使用与代码导读](docs/项目使用与代码导读.md)。
 
+目录职责、依赖方向与新导入路径见 [子包结构与依赖关系](docs/子包结构与依赖关系.md)。
+
+按“遇到问题 → 增加机制”的顺序学习，见 [从最小模型到完整 Agent 的演进导读](docs/从最小模型到完整Agent的演进导读.md)。
+
 一个面向派送作业的生产修数 Agent 面试项目。
 
 ## 业务背景
 
 派送业务同时包含线下作业和多个线上系统。作业人员可能出现漏扫、补扫、乱序扫码、重复提交或弱网下延迟上报，导致：
 
-- 线下已完成签收，运单仍停留在“派送中”。
-- 派送员已揽件并开始派送，运单仍是“已分配”。
-- 核心运单状态正确，但作业看板的读模型没有同步。
-- 运单、派送任务、作业事件和看板之间出现状态不一致，阻塞交接、完结、结算或后续作业。
+- 线下已完成签收，订单仍停留在“派送中”。
+- 骑手已接单，订单仍停留在“刚创建”。
+- 核心订单状态正确，但作业看板的读模型没有同步。
+- 订单、派送任务、作业事件和看板之间出现状态不一致，阻塞交接、完结、结算或后续作业。
 
-业务人员提交问题后，Agent 会核对运单、派送任务和作业记录，识别真实的状态不一致，选择经审核的修数 Playbook，并根据风险自动执行或等待开发审批，以减少对现场作业的阻塞。
+业务人员提交问题后，Agent 会核对订单、派送任务和作业记录，识别真实的状态不一致，选择经审核的修数 Playbook，并根据风险自动执行或等待开发审批，以减少对现场作业的阻塞。
 
 > 业务描述是 Claim，不是 Fact；模型结论是 Recommendation，不是 Authorization；Tool 成功不等于作业已恢复。
 
 ## 派送状态模型
 
+状态枚举、含义和代码修改位置见 [业务状态定义](docs/业务状态定义.md)，也可通过 `GET /statuses` 查询。
+
 ```text
-CREATED → ASSIGNED → PICKED_UP / DELIVERING → DELIVERED
+订单：CREATE → DELIVERING → DELIVERED
+                    ↕ ON_HOLD
+           异常无法派送 → RETURNED
+
+派送任务：CREATE → PENDING_ASSIGN → ASSIGNED → COMPLETE
 ```
 
 当前 Demo 将下列数据源分开建模：
 
 ```text
-核心运单 Waybill          运单权威状态
+核心订单 Order          订单权威状态
 派送任务 DeliveryTask    作业任务状态与派送员
-作业事件 OperationEvent  揽收、签收等扫码记录
+作业事件 OperationEvent  骑手接单、签收等作业记录
 派送看板 Projection       供运营和现场查看的读模型
 ```
 
@@ -39,7 +49,7 @@ CREATED → ASSIGNED → PICKED_UP / DELIVERING → DELIVERED
 ```text
 业务问题
    ↓
-Triage：提取运单号和问题类型
+Triage：提取订单号和问题类型
    ↓
 Investigation Planner ⇄ 只读 Tool
    ↓
@@ -57,9 +67,9 @@ Investigation Planner ⇄ 只读 Tool
 
 | Playbook | 适用问题 | 风险 | 执行方式 |
 |---|---|---:|---|
-| `APPLY_DELIVERY_COMPLETION_V1` | 签收作业已成功，派送任务已完成，运单仍派送中 | MEDIUM | 人工审批 |
-| `APPLY_PICKUP_SCAN_V1` | 揽收扫描成功且任务已派送中，运单仍已分配 | HIGH | 人工审批 |
-| `REBUILD_DISPATCH_PROJECTION_V1` | 核心运单正确，派送看板过期 | LOW | 自动执行 |
+| `APPLY_DELIVERY_COMPLETION_V1` | 签收作业已成功，派送任务已完成，订单仍派送中 | MEDIUM | 人工审批 |
+| `APPLY_PICKUP_SCAN_V1` | 骑手已接任务且接单记录有效，订单仍为 CREATE | HIGH | 人工审批 |
+| `REBUILD_DISPATCH_PROJECTION_V1` | 核心订单正确，派送看板过期 | LOW | 自动执行 |
 
 Agent 只能选择 Playbook，不允许生成任意 SQL。
 
@@ -71,10 +81,10 @@ Agent 只能选择 Playbook，不允许生成任意 SQL。
 - 五维置信度：意图、证据完整度、一致性、历史匹配度、Playbook 成功率。
 - 作业记录缺失时硬门禁拒绝修数。
 - `interrupt()` 人工审批与恢复。
-- 审批后重新校验运单版本，防止 TOCTOU。
+- 审批后重新校验订单版本，防止 TOCTOU。
 - 修数 Tool 幂等，并使用独立只读查询验收。
 - FastAPI 工单、审批、时间线和 Playbook 接口。
-- 默认本地 Reasoner，可选支持 JSON Schema 的真实 LLM 端点。
+- 默认本地 Reasoner，可选支持 JSON Schema 与原生 Tool Calling 的真实 LLM 端点。
 - 持久化有界任务队列、后台 Worker、租约与心跳、审批后重新入队。
 - 时长与模型预算、协作式取消、只读重试、依赖并发隔离和熔断。
 - 修复结果未知时只读对账；大证据归档与终态检查点保留期清理。
@@ -90,32 +100,32 @@ pip install -e .
 
 ### CLI 演示
 
-签收后运单未完结：
+签收后订单未完结：
 
 ```bash
 repair-agent --reset-demo --approve \
-  "运单 W1001 线下已签收，但系统还是派送中，阻塞交接作业"
+  "订单 W1001 线下已签收，但系统还是派送中，阻塞交接作业"
 ```
 
 作业事件平台不可用，不修数：
 
 ```bash
 repair-agent --reset-demo \
-  "运单 W1002 线下已签收，但系统还是派送中"
+  "订单 W1002 线下已签收，但系统还是派送中"
 ```
 
-揽收后运单未进入派送中：
+接单后订单未进入派送中：
 
 ```bash
 repair-agent --reset-demo --approve \
-  "运单 W2001 作业员已取件，但运单还是已分配"
+  "订单 W2001 骑手已接单，但订单还是刚创建"
 ```
 
 看板读模型过期，低风险自动修复：
 
 ```bash
 repair-agent --reset-demo \
-  "运单 W3001 已送达，但派送看板显示还在派送中"
+  "订单 W3001 已送达，但派送看板显示还在派送中"
 ```
 
 ### HTTP API
@@ -131,7 +141,7 @@ repair-agent-api
 ```bash
 curl -s http://127.0.0.1:8000/cases \
   -H 'Content-Type: application/json' \
-  -d '{"message":"运单 W1001 线下已签收，但系统还是派送中","requester_id":"station-operator"}'
+  -d '{"message":"订单 W1001 线下已签收，但系统还是派送中","requester_id":"station-operator"}'
 ```
 
 ```text
@@ -147,17 +157,21 @@ POST /cases/{case_id}/approval
 POST /cases/{case_id}/cancel
 POST /cases/{case_id}/reconcile
 GET  /artifacts/{artifact_id}
-POST /demo/waybills/{waybill_id}/bump-version
+POST /demo/orders/{order_id}/bump-version
 POST /demo/reset
 ```
 
 ## 可选真实 LLM
 
-```bash
-export REPAIR_LLM_BASE_URL="https://your-provider.example/v1"
-export REPAIR_LLM_API_KEY="..."
-export REPAIR_LLM_MODEL="your-model"
+在项目根目录的 `.env` 中填写以下配置，启动时会自动读取：
+
+```dotenv
+REPAIR_LLM_BASE_URL=https://your-provider.example/v1
+REPAIR_LLM_API_KEY=你的密钥
+REPAIR_LLM_MODEL=你的模型名称
 ```
+
+本地已创建密钥留空的 `.env`，新环境可从 `.env.example` 复制。已有环境变量优先，修改文件后重启服务。完整说明见 [本地配置文件](docs/本地配置文件.md)。
 
 LLM 只负责理解业务描述、规划只读查询和提出诊断；风险门禁、审批、写操作和验收仍由确定性代码控制。LLM 引用的 `evidence_id` 和 Playbook ID 会被二次校验。
 
@@ -167,7 +181,7 @@ LLM 只负责理解业务描述、规划只读查询和提出诊断；风险门�
 python -m unittest discover -s tests -v
 ```
 
-覆盖签收修数、揽收修数、读模型修复、作业证据缺失、业务误报、审批拒绝、幂等、进程重启恢复和 TOCTOU。
+覆盖签收修数、接单状态修数、读模型修复、作业证据缺失、业务误报、审批拒绝、幂等、进程重启恢复和 TOCTOU。
 
 更详细的架构边界见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
 
@@ -191,7 +205,7 @@ python -m repair_agent.knowledge /absolute/path/history.jsonl
 
 自定义业务数据库时，默认知识库路径为 `<业务数据库路径>.knowledge.db`。可以设置 `REPAIR_KNOWLEDGE_DB` 指定知识库文件，并在导入时用 `--db` 指向同一文件。导入后下一次请求立即可检索，无需重启。
 
-可用 `GET /knowledge/search?query=签收&issue_type=DELIVERY_TASK_WAYBILL_MISMATCH` 预览检索结果；此接口不会执行修复。案例应包含诊断依据、适用前提、修复步骤和验收标准；上线前用未入库的独立案例评估检索效果。
+可用 `GET /knowledge/search?query=签收&issue_type=DELIVERY_TASK_ORDER_MISMATCH` 预览检索结果；此接口不会执行修复。案例应包含诊断依据、适用前提、修复步骤和验收标准；上线前用未入库的独立案例评估检索效果。
 
 ## 平台模拟工具
 
@@ -200,3 +214,27 @@ python -m repair_agent.knowledge /absolute/path/history.jsonl
 ## 封装修复接口
 
 修复执行已改为 `Playbook → 固定 HTTP 接口 → 后端业务服务`。Agent 不直接执行业务写 SQL。默认使用本地 HTTP MockTransport；设置 `REPAIR_BACKEND_BASE_URL` 可调用独立后端。接口映射、请求参数、启动命令与超时处理见 [中文导读](docs/项目使用与代码导读.md#修复执行调用封装后端接口)。
+
+### Order ID 命名与旧数据迁移
+
+业务标识统一使用 Order ID（订单号），代码和 JSON 字段为 `order_id`，只读工具为 `GET_ORDER`，状态枚举为 `OrderStatus`，证据类型为 `ORDER_SNAPSHOT`。示例订单号仍使用 `W1001` 等值；目前规则解析与 API 校验仍使用 `W` 加至少四位数字的演示格式。
+
+启动时自动将旧数据库的字段、演示订单表、工单状态、排队载荷、历史知识和 LangGraph 检查点转换为订单命名，并保留原有任务 ID、检查点 ID 与执行结果。迁移不会重新执行修数操作。更新服务前应停止旧版本进程并备份数据库；不要让新旧版本同时访问迁移中的数据库。
+
+HTTP 参数与路径、工具名及异常类型已同步更名，外部调用方需要使用 `order_id`、`GET_ORDER`、`DELIVERY_TASK_ORDER_MISMATCH` 和 `/demo/orders/{order_id}/bump-version` 等新接口名称。
+
+### 原生 Tool Calling 调查流程
+
+配置三个 `REPAIR_LLM_*` 参数后，问题提取和诊断使用 JSON Schema 结构化输出；只读调查使用 Chat Completions 的原生 `tools` / `tool_calls` 协议。
+
+1. `agent/reasoning.py:plan_tool_call()` 将尚未查询的工具名称、用途和 `order_id` 参数 Schema 放入请求的 `tools` 字段，每轮最多选择一个工具。
+2. 模型返回 `tool_calls`，包含调用 ID、工具名称和 JSON 参数；普通消息且无工具调用表示调查结束。
+3. 程序校验工具白名单、调用数量、参数结构及订单号。模型不能跨订单查询、请求写操作或重复查询已查工具。非法响应、网络失败或服务不支持该协议时回退本地规则，审计日志会记录实际执行的工具，模型回退会写入服务日志及指标。
+4. `agent/graph.py:execute_read_tool()` 执行只读工具，将证据以 `role: tool` 和对应的 `tool_call_id` 写回消息历史。下一轮模型请求包含这些调用和结果。
+5. 消息历史保存在 `RepairState.tool_call_messages`，未完成调用保存在 `pending_tool_call`，二者随检查点持久化。新任务初始化为空，不与其他任务共享。
+
+模型负责提出调用请求，程序负责执行。修复写接口仍由 Playbook、风险门禁和审批控制，不开放为模型可自行选择的工具。无模型配置时继续使用本地规则；平台工具仍为演示数据。
+
+相关契约与端到端流程测试见 `tests/test_tool_calling.py`；测试使用模拟 HTTP 响应，不调用付费模型 API。
+
+本地 Postman 调试、日志路径和查询方式见 [本地调试与日志](docs/本地调试与日志.md)。

@@ -4,8 +4,8 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from repair_agent.api import create_app
-from repair_agent.runtime import RepairRuntime
+from repair_agent.api.app import create_app
+from repair_agent.application.runtime import RepairRuntime
 
 
 class ApiTests(unittest.TestCase):
@@ -24,7 +24,7 @@ class ApiTests(unittest.TestCase):
     # 验证 API 创建工单、审批修复和读取审计时间线的完整链路。
     def test_create_approve_and_read_timeline(self):
         created = self.client.post("/cases?wait=true", json={
-            "message": "运单 W1001 线下已签收，但系统还是派送中",
+            "message": "订单 W1001 线下已签收，但系统还是派送中",
             "requester_id": "business-user",
         })
         self.assertEqual(created.status_code, 201)
@@ -44,7 +44,7 @@ class ApiTests(unittest.TestCase):
 
     # 验证已处理工单不能再次审批。
     def test_duplicate_approval_is_rejected(self):
-        created = self.client.post("/cases?wait=true", json={"message": "运单 W1001 线下已签收，但系统还是派送中"})
+        created = self.client.post("/cases?wait=true", json={"message": "订单 W1001 线下已签收，但系统还是派送中"})
         case_id = created.json()["case_id"]
         payload = {"actor_id": "developer-1", "approved": False}
         self.assertEqual(self.client.post(f"/cases/{case_id}/approval?wait=true", json=payload).status_code, 200)

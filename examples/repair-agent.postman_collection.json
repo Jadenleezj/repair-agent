@@ -1,0 +1,122 @@
+{
+  "info": {
+    "name": "Repair Agent 本地调试",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://127.0.0.1:8000"
+    },
+    {
+      "key": "case_id",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "1 服务健康",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/health"
+      }
+    },
+    {
+      "name": "2 创建工单（异步）",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/cases",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"message\": \"订单 W1001 线下已签收，但系统还是派送中，阻塞交接作业\",\n  \"requester_id\": \"postman-user\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"创建成功\", () => pm.expect(pm.response.code).to.be.oneOf([201,202]));",
+              "if (pm.response.code < 300) pm.collectionVariables.set(\"case_id\", pm.response.json().case_id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "3 查看工单（等待 WAITING_APPROVAL）",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/cases/{{case_id}}"
+      }
+    },
+    {
+      "name": "4 人工批准修复（会调用修复接口）",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/cases/{{case_id}}/approval",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"approved\": true,\n  \"actor_id\": \"postman-reviewer\",\n  \"comment\": \"已核实证据，批准修复\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "5 查看任务进度",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/cases/{{case_id}}/task"
+      }
+    },
+    {
+      "name": "6 查看审计时间线",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/cases/{{case_id}}/timeline"
+      }
+    },
+    {
+      "name": "7 工具列表",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/tools/platforms"
+      }
+    },
+    {
+      "name": "8 查看监控指标",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/metrics"
+      }
+    }
+  ]
+}

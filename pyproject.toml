@@ -9,11 +9,12 @@ dependencies = [
   "langgraph>=1.0,<2.0",
   "langgraph-checkpoint-sqlite>=3.0,<4.0",
   "uvicorn>=0.34,<1.0",
+  "python-dotenv>=1.1,<2.0",
 ]
 
 [project.scripts]
 repair-agent = "repair_agent.cli:main"
-repair-agent-api = "repair_agent.api:run"
+repair-agent-api = "repair_agent.api.app:run"
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -23,4 +24,4 @@ build-backend = "setuptools.build_meta"
 include = ["repair_agent*"]
 
 [tool.setuptools.package-data]
-repair_agent = ["platform_fixtures.json"]
+"repair_agent.tools" = ["fixtures/*.json"]

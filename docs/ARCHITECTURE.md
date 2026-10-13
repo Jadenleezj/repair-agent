@@ -34,7 +34,7 @@ flowchart TD
     H -->|Insufficient evidence| K[Escalate]
     J -->|Approved| I
     J -->|Rejected| K
-    I -->|Waybill version unchanged| L[Idempotent execution]
+    I -->|Order version unchanged| L[Idempotent execution]
     I -->|Changed| K
     L --> M[Independent verification]
 ```
@@ -59,7 +59,7 @@ blocks execution regardless of the score.
 - User messages, logs, and Tool output are untrusted data.
 - The model receives read-only Tool choices only.
 - The execution service accepts a Playbook ID, never arbitrary SQL.
-- Every execution is bound to one case, one waybill, one expected version, and one idempotency key.
+- Every execution is bound to one case, one order, one expected version, and one idempotency key.
 - Approval is not authorization in a real deployment; authentication and RBAC must be enforced by
   the API and Tool service. This demo records the approver but does not implement enterprise SSO.
 
@@ -90,15 +90,15 @@ for configuration, endpoints and the limits of cooperative cancellation.
 - Store large snapshots in object storage and keep hashes/references in the audit DB.
 - Add OpenTelemetry traces, model/token cost metrics, and alerting.
 - Build a labeled evaluation set and calibrate thresholds per Playbook.
-- Add rate limits, approval expiry, distributed waybill locks, and compensating actions.
+- Add rate limits, approval expiry, distributed order locks, and compensating actions.
 
 ## Backend repair API boundary
 
 The Agent execution tool now calls a fixed HTTP endpoint selected by Playbook ID.
-`backend_client.py` owns the request contract, timeout handling and response validation.
-`mock_backend.py` owns demo business transactions and idempotency; its SQL is an internal
+`tools/backend_client.py` owns the request contract, timeout handling and response validation.
+`demo/backend.py` owns demo business transactions and idempotency; its SQL is an internal
 backend implementation, not an Agent-generated repair command. Core evidence reads
 also use the backend so revalidation and verification see the same business data.
-The default transport is a local HTTP mock. `backend_api.py` exposes the same contract
+The default transport is a local HTTP mock. `demo/api.py` exposes the same contract
 as an independently runnable FastAPI server. Ambiguous write outcomes produce
 `EXECUTION_OUTCOME_UNKNOWN` and are not automatically retried or redirected to local writes.

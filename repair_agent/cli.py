@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 from typing import Any
 
-from .runtime import RepairRuntime
+from repair_agent.application.runtime import RepairRuntime
+from repair_agent.application.config import load_local_config
 
 
 # 将对象输出为缩进 JSON，保留中文，便于查看诊断与审计。
@@ -17,7 +19,7 @@ def print_json(value: Any) -> None:
 def summary(result: dict[str, Any]) -> dict[str, Any]:
     state = result["state"]
     return {
-        "case_id": result["case_id"], "waybill_id": state.get("waybill_id"),
+        "case_id": result["case_id"], "order_id": state.get("order_id"),
         "issue_type": state.get("issue_type"), "root_cause": state.get("root_cause"),
         "knowledge_hits": state.get("knowledge_hits", []),
         "confidence": state.get("confidence"),
@@ -30,12 +32,13 @@ def summary(result: dict[str, Any]) -> dict[str, Any]:
 
 # 解析 CLI 参数，创建工单，处理审批交互并打印最终结果。
 def main() -> None:
+    load_local_config()
     parser = argparse.ArgumentParser(description="Delivery state repair LangGraph interview demo")
     parser.add_argument(
         "message", nargs="?",
-        default="运单 W1001 线下已签收，但系统还是派送中，阻塞交接作业",
+        default="订单 W1001 线下已签收，但系统还是派送中，阻塞交接作业",
     )
-    parser.add_argument("--db", default="data/repair_agent.db")
+    parser.add_argument("--db", default=os.getenv('REPAIR_AGENT_DB','data/repair_agent.db'))
     parser.add_argument("--requester", default="demo-user")
     parser.add_argument("--reset-demo", action="store_true")
     approval = parser.add_mutually_exclusive_group()

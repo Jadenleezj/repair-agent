@@ -13,3 +13,8 @@ data/
 *.artifacts/
 .pytest_cache/
 .coverage
+build/
+dist/
+
+# 本地运行日志
+logs/

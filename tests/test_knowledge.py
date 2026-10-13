@@ -3,10 +3,10 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
-from repair_agent.knowledge import KnowledgeStore
-from repair_agent.runtime import RepairRuntime
-from repair_agent.reasoning import HttpJsonReasoner
-from repair_agent.models import DiagnosisResult
+from repair_agent.knowledge.store import KnowledgeStore
+from repair_agent.application.runtime import RepairRuntime
+from repair_agent.agent.reasoning import HttpJsonReasoner
+from repair_agent.agent.models import DiagnosisResult
 
 class KnowledgeTests(unittest.TestCase):
     # 为当前测试创建独立临时数据库及运行环境，避免测试间数据相互污染。
@@ -25,7 +25,7 @@ class KnowledgeTests(unittest.TestCase):
     # 验证中文检索、异常类型过滤、引用哈希及无匹配结果。
     def test_retrieval_filter_and_no_match(self):
         self.ingest(self.sample)
-        hits=self.store.search('签收成功 运单派送中','DELIVERY_TASK_WAYBILL_MISMATCH')
+        hits=self.store.search('签收成功 订单派送中','DELIVERY_TASK_ORDER_MISMATCH')
         self.assertEqual(hits[0]['case']['case_id'],'DEMO-HISTORY-001')
         self.assertEqual(len(hits[0]['content_hash']),64)
         self.assertEqual(self.store.search('签收','PICKUP_SCAN_NOT_APPLIED'),[])
@@ -50,7 +50,7 @@ class KnowledgeTests(unittest.TestCase):
         self.ingest(self.sample)
         runtime=RepairRuntime(self.path/'runtime.db',knowledge_path=self.path/'knowledge.db')
         try:
-            result=runtime.create_case('运单 W1002 已签收但是还在派送中')
+            result=runtime.create_case('订单 W1002 已签收但是还在派送中')
             self.assertTrue(result['state']['knowledge_hits'])
             self.assertEqual(result['status'],'ESCALATED')
             self.assertIsNone(result['state'].get('execution_result'))
@@ -58,7 +58,7 @@ class KnowledgeTests(unittest.TestCase):
     # 验证历史引用进入模型载荷，但不混入当前事实证据。
     def test_reference_is_passed_to_llm_but_not_as_evidence(self):
         reasoner=HttpJsonReasoner('http://localhost','test','test')
-        state={'issue_type':'DELIVERY_TASK_WAYBILL_MISMATCH','evidence':[],
+        state={'issue_type':'DELIVERY_TASK_ORDER_MISMATCH','evidence':[],
                'knowledge_hits':[{'case':self.sample[0]}]}
         captured=[]
         # 测试替身：捕获模型请求载荷并返回固定诊断，不调用外部服务。
@@ -76,7 +76,7 @@ class KnowledgeTests(unittest.TestCase):
         runtime=RepairRuntime(self.path/'runtime.db')
         try:
             with patch.object(runtime.knowledge,'search',side_effect=RuntimeError('down')):
-                result=runtime.create_case('运单 W1001 已签收但还是派送中')
+                result=runtime.create_case('订单 W1001 已签收但还是派送中')
             self.assertEqual(result['status'],'WAITING_APPROVAL')
             self.assertEqual(result['state']['knowledge_hits'],[])
         finally: runtime.close()

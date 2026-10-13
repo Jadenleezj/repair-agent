@@ -1,0 +1,286 @@
+{
+  "QUERY_LOG_PLATFORM": {
+    "W1001": {
+      "status": "FOUND",
+      "value": {
+        "service": "order-sync",
+        "trace_id": "demo-trace-W1001",
+        "records": [
+          {
+            "timestamp": "2026-04-15T10:00:00Z",
+            "level": "ERROR",
+            "message": "状态同步写入超时",
+            "order_id": "W1001"
+          }
+        ]
+      }
+    },
+    "W1002": {
+      "status": "UNAVAILABLE",
+      "value": {
+        "reason": "模拟日志平台不可用"
+      }
+    },
+    "W1003": {
+      "status": "FOUND",
+      "value": {
+        "service": "order-sync",
+        "trace_id": "demo-trace-W1003",
+        "records": [
+          {
+            "timestamp": "2026-04-15T10:00:00Z",
+            "level": "INFO",
+            "message": "处理结束",
+            "order_id": "W1003"
+          }
+        ]
+      }
+    },
+    "W2001": {
+      "status": "FOUND",
+      "value": {
+        "service": "order-sync",
+        "trace_id": "demo-trace-W2001",
+        "records": [
+          {
+            "timestamp": "2026-04-15T10:00:00Z",
+            "level": "ERROR",
+            "message": "状态同步写入超时",
+            "order_id": "W2001"
+          }
+        ]
+      }
+    },
+    "W3001": {
+      "status": "FOUND",
+      "value": {
+        "service": "order-sync",
+        "trace_id": "demo-trace-W3001",
+        "records": [
+          {
+            "timestamp": "2026-04-15T10:00:00Z",
+            "level": "INFO",
+            "message": "处理结束",
+            "order_id": "W3001"
+          }
+        ]
+      }
+    }
+  },
+  "QUERY_CONFIG_CENTER": {
+    "W1001": {
+      "status": "FOUND",
+      "value": {
+        "namespace": "dispatch",
+        "version": 12,
+        "published_at": "2026-04-15T09:00:00Z",
+        "settings": {
+          "state_sync_enabled": true,
+          "retry_limit": 3,
+          "projection_refresh_interval_seconds": 300
+        }
+      }
+    },
+    "W1002": {
+      "status": "FOUND",
+      "value": {
+        "namespace": "dispatch",
+        "version": 12,
+        "published_at": "2026-04-15T09:00:00Z",
+        "settings": {
+          "state_sync_enabled": true,
+          "retry_limit": 3,
+          "projection_refresh_interval_seconds": 300
+        }
+      }
+    },
+    "W1003": {
+      "status": "FOUND",
+      "value": {
+        "namespace": "dispatch",
+        "version": 12,
+        "published_at": "2026-04-15T09:00:00Z",
+        "settings": {
+          "state_sync_enabled": true,
+          "retry_limit": 3,
+          "projection_refresh_interval_seconds": 300
+        }
+      }
+    },
+    "W2001": {
+      "status": "FOUND",
+      "value": {
+        "namespace": "dispatch",
+        "version": 12,
+        "published_at": "2026-04-15T09:00:00Z",
+        "settings": {
+          "state_sync_enabled": true,
+          "retry_limit": 3,
+          "projection_refresh_interval_seconds": 300
+        }
+      }
+    },
+    "W3001": {
+      "status": "FOUND",
+      "value": {
+        "namespace": "dispatch",
+        "version": 12,
+        "published_at": "2026-04-15T09:00:00Z",
+        "settings": {
+          "state_sync_enabled": true,
+          "retry_limit": 3,
+          "projection_refresh_interval_seconds": 300
+        }
+      }
+    }
+  },
+  "QUERY_SCHEDULER": {
+    "W1001": {
+      "status": "FOUND",
+      "value": {
+        "job_id": "dispatch-projection-refresh",
+        "enabled": true,
+        "cron": "*/5 * * * *",
+        "last_run": {
+          "started_at": "2026-04-15T10:00:00Z",
+          "status": "SUCCEEDED",
+          "error": null
+        },
+        "next_run_at": "2026-04-15T10:05:00Z"
+      }
+    },
+    "W1002": {
+      "status": "FOUND",
+      "value": {
+        "job_id": "dispatch-projection-refresh",
+        "enabled": true,
+        "cron": "*/5 * * * *",
+        "last_run": {
+          "started_at": "2026-04-15T10:00:00Z",
+          "status": "SUCCEEDED",
+          "error": null
+        },
+        "next_run_at": "2026-04-15T10:05:00Z"
+      }
+    },
+    "W1003": {
+      "status": "FOUND",
+      "value": {
+        "job_id": "dispatch-projection-refresh",
+        "enabled": true,
+        "cron": "*/5 * * * *",
+        "last_run": {
+          "started_at": "2026-04-15T10:00:00Z",
+          "status": "SUCCEEDED",
+          "error": null
+        },
+        "next_run_at": "2026-04-15T10:05:00Z"
+      }
+    },
+    "W2001": {
+      "status": "FOUND",
+      "value": {
+        "job_id": "dispatch-projection-refresh",
+        "enabled": true,
+        "cron": "*/5 * * * *",
+        "last_run": {
+          "started_at": "2026-04-15T10:00:00Z",
+          "status": "SUCCEEDED",
+          "error": null
+        },
+        "next_run_at": "2026-04-15T10:05:00Z"
+      }
+    },
+    "W3001": {
+      "status": "FOUND",
+      "value": {
+        "job_id": "dispatch-projection-refresh",
+        "enabled": true,
+        "cron": "*/5 * * * *",
+        "last_run": {
+          "started_at": "2026-04-15T10:00:00Z",
+          "status": "FAILED",
+          "error": "模拟任务超时"
+        },
+        "next_run_at": "2026-04-15T10:05:00Z"
+      }
+    }
+  },
+  "QUERY_HIVE_TABLE": {
+    "W1001": {
+      "status": "FOUND",
+      "value": {
+        "table": "dwd.dispatch_order_snapshot",
+        "partition": "2026-04-14",
+        "snapshot_at": "2026-04-15T02:00:00Z",
+        "freshness": "OFFLINE_SNAPSHOT",
+        "rows": [
+          {
+            "order_id": "W1001",
+            "status": "DELIVERING"
+          }
+        ]
+      }
+    },
+    "W1002": {
+      "status": "FOUND",
+      "value": {
+        "table": "dwd.dispatch_order_snapshot",
+        "partition": "2026-04-14",
+        "snapshot_at": "2026-04-15T02:00:00Z",
+        "freshness": "OFFLINE_SNAPSHOT",
+        "rows": [
+          {
+            "order_id": "W1002",
+            "status": "DELIVERING"
+          }
+        ]
+      }
+    },
+    "W1003": {
+      "status": "FOUND",
+      "value": {
+        "table": "dwd.dispatch_order_snapshot",
+        "partition": "2026-04-14",
+        "snapshot_at": "2026-04-15T02:00:00Z",
+        "freshness": "OFFLINE_SNAPSHOT",
+        "rows": [
+          {
+            "order_id": "W1003",
+            "status": "DELIVERING"
+          }
+        ]
+      }
+    },
+    "W2001": {
+      "status": "FOUND",
+      "value": {
+        "table": "dwd.dispatch_order_snapshot",
+        "partition": "2026-04-14",
+        "snapshot_at": "2026-04-15T02:00:00Z",
+        "freshness": "OFFLINE_SNAPSHOT",
+        "rows": [
+          {
+            "order_id": "W2001",
+            "status": "CREATE"
+          }
+        ]
+      }
+    },
+    "W3001": {
+      "status": "FOUND",
+      "value": {
+        "table": "dwd.dispatch_order_snapshot",
+        "partition": "2026-04-14",
+        "snapshot_at": "2026-04-15T02:00:00Z",
+        "freshness": "OFFLINE_SNAPSHOT",
+        "rows": [
+          {
+            "order_id": "W3001",
+            "status": "DELIVERING"
+          }
+        ]
+      }
+    }
+  }
+}
