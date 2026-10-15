@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>修数助手 · Repair Agent</title>
+  <link rel="stylesheet" href="/assets/styles.css">
+  <script defer src="/assets/app.js"></script>
+</head>
+<body>
+  <aside class="sidebar" id="sidebar">
+    <a class="brand" href="/" aria-label="修数助手首页"><span class="brand-icon">R<span></span></span><div>修数助手<small>REPAIR AGENT</small></div></a>
+    <button class="new-chat" id="new-chat"><span>＋</span> 新建聊天 <kbd>N</kbd></button>
+    <div class="list-heading">修数任务 <button id="refresh" aria-label="刷新任务">↻</button></div>
+    <nav id="case-list" aria-label="历史修数任务"><p class="muted list-empty">正在加载任务…</p></nav>
+    <div class="sidebar-footer"><span class="connection-dot" id="connection-dot"></span><div id="connection-text">连接本地服务中</div><a href="/docs" target="_blank" rel="noopener" aria-label="打开 API 文档">↗</a></div>
+  </aside>
+  <main>
+    <header class="topbar"><button class="menu" id="menu" aria-label="展开任务列表">☰</button><div>修数工作台 <span class="divider">/</span> <span id="header-title">新聊天</span></div><span class="environment">本地工作区</span></header>
+    <div class="conversation" id="conversation" aria-live="polite"></div>
+    <div class="bottom-area">
+      <div id="task-footer" class="task-footer" hidden></div>
+      <form class="composer" id="composer">
+        <label class="sr-only" for="message">描述需要修复的订单问题</label>
+        <textarea id="message" rows="2" maxlength="4000" placeholder="描述订单的问题，请附上 Order ID…"></textarea>
+        <div class="composer-bottom"><span><span class="composer-dot"></span> 根据业务证据进行诊断</span><button id="send" type="submit" aria-label="发送修数问题"><svg viewBox="0 0 24 24" fill="none"><path d="M12 19V5m-6 6 6-6 6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>
+      </form>
+      <div class="composer-hint" id="composer-hint">Enter 发送 · Shift + Enter 换行 · 每个聊天处理一项修数任务</div>
+      <div id="error" class="error" role="alert" hidden></div>
+    </div>
+  </main>
+</body>
+</html>

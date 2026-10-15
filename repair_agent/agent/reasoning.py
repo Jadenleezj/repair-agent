@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from repair_agent.application.logging_setup import traced
+from repair_agent.application.logging_setup import traced, log_model_response, log_request_timing
 
 import json
 import os
 import logging
 import time
+import uuid
 from repair_agent.execution.reliability import CURRENT_RUN, RunStopped
 from repair_agent.execution.http_io import read_json_response
 from repair_agent.domain.statuses import OrderStatus, DeliveryTaskStatus, status_catalog, delivery_task_consistent
@@ -167,19 +168,22 @@ class HttpJsonReasoner:
             "response_format":{"type":"json_schema","json_schema":{
                 "name":schema_name,"strict":True,"schema":output_model.model_json_schema()}},
         }
-        message = self._request_message(body)
+        message = self._request_message(body, stage=output_model.__name__)
         return output_model.model_validate_json(message["content"])
 
     @traced
-    def _request_message(self, body: dict) -> dict:
+    def _request_message(self, body: dict, *, stage: str | None = None) -> dict:
         """结构化输出与工具调用共用超时、重试和预算限制。"""
         control = CURRENT_RUN.get()
         if control:
             control.check()
         # 无专用 tokenizer 时按完整请求的 UTF-8 字节保守预留，包括 schema。
         estimated_input=max(1,len(json.dumps(body,ensure_ascii=False).encode('utf-8')))
+        call_id = uuid.uuid4().hex
+        attempts = 0
         # 每次重试都重新预留预算，并向模型传入剩余输出上限。
         def request():
+            nonlocal attempts
             logging.getLogger(__name__).info("model request attempt model=%s", self.model)
             if control:
                 control.consume(estimated_input)
@@ -189,11 +193,42 @@ class HttpJsonReasoner:
                 control.model_request()
             timeout=min(control.settings.model_timeout_seconds,max(.01,control.deadline-time.monotonic())) if control else 20
             limit=self.guard.settings.output_bytes*8 if self.guard else 256000
-            return read_json_response(self.client,'POST',f"{self.base_url}/chat/completions",
-                                      json=body,timeout=timeout,max_bytes=limit)
-        data=self.guard.call('llm',request,self.guard.settings.read_retries) if self.guard else request()
+            attempts += 1
+            started = time.monotonic()
+            response_info = {}
+            outcome = 'failed'
+            error_type = None
+            def capture(response):
+                response_info.update(http_status=response.status_code,
+                                     model_request_id=response.headers.get('x-request-id'))
+            try:
+                data = read_json_response(self.client, 'POST', f"{self.base_url}/chat/completions",
+                                          json=body, timeout=timeout, max_bytes=limit, on_response=capture)
+                # 在工具参数、Pydantic 或预算校验前保存 API 实际返回，便于排查回退。
+                log_model_response(llm_call_id=call_id, attempt=attempts, stage=stage,
+                                   adapter=type(self).__name__, model=self.model,
+                                   response=data, **response_info)
+                outcome = 'response_received'
+                return data
+            except Exception as exc:
+                error_type = type(exc).__name__
+                raise
+            finally:
+                log_request_timing(record_type='llm_attempt', llm_call_id=call_id,
+                                   attempt=attempts, stage=stage, adapter=type(self).__name__,
+                                   model=self.model, duration_ms=round((time.monotonic()-started)*1000, 3),
+                                   outcome=outcome, error_type=error_type, **response_info)
+        call_started = time.monotonic()
+        call_outcome = 'failed'
+        try:
+            data = self.guard.call('llm',request,self.guard.settings.read_retries) if self.guard else request()
+            call_outcome = 'response_received'
+        finally:
+            log_request_timing(record_type='llm_call', llm_call_id=call_id, stage=stage,
+                               adapter=type(self).__name__, model=self.model, attempts=attempts,
+                               duration_ms=round((time.monotonic()-call_started)*1000, 3), outcome=call_outcome)
         choice = data["choices"][0]
-        if choice.get("finish_reason") in {"length", "content_filter"}:
+        if choice.get("finish_reason") in {"length", "content_filter", "insufficient_system_resource", "aborted"}:
             raise ValueError("model response was incomplete")
         logging.getLogger(__name__).info("model response finish_reason=%s total_tokens=%s", choice.get("finish_reason"), data.get("usage", {}).get("total_tokens"))
         message = choice["message"]
@@ -273,7 +308,7 @@ class HttpJsonReasoner:
                         "evidence": state.get("evidence", []),
                     }, ensure_ascii=False, default=str)}, *history],
                 "tools": definitions, "tool_choice": "auto", "parallel_tool_calls": False,
-            })
+            }, stage="tool_planning")
             if message.get("refusal"):
                 raise ValueError("model refused tool planning")
             calls = message.get("tool_calls") or []
@@ -300,7 +335,7 @@ class HttpJsonReasoner:
         except RunStopped:
             raise
         except Exception as exc:
-            logging.getLogger(__name__).warning('LLM tool calling fallback: %s', type(exc).__name__)
+            logging.getLogger(__name__).warning('LLM tool calling fallback: %s: %s', type(exc).__name__, str(exc))
             if self.guard:self.guard.metrics.increment('llm.fallback.planning')
             return {"next_tool": allowed[0], "pending_tool_call": None, "tool_call_messages": history}
 
@@ -339,5 +374,6 @@ def reasoner_from_env() -> Reasoner:
     api_key = os.getenv("REPAIR_LLM_API_KEY")
     model = os.getenv("REPAIR_LLM_MODEL")
     if base_url and api_key and model:
-        return HttpJsonReasoner(base_url, api_key, model)
+        from repair_agent.agent.adapters import create_reasoner
+        return create_reasoner(base_url, api_key, model, provider=os.getenv("REPAIR_LLM_PROVIDER"))
     return RuleReasoner()

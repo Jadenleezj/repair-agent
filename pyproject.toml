@@ -25,3 +25,5 @@ include = ["repair_agent*"]
 
 [tool.setuptools.package-data]
 "repair_agent.tools" = ["fixtures/*.json"]
+
+"repair_agent.api" = ["static/*.html", "static/*.css", "static/*.js"]

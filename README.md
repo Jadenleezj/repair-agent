@@ -84,7 +84,7 @@ Agent 只能选择 Playbook，不允许生成任意 SQL。
 - 审批后重新校验订单版本，防止 TOCTOU。
 - 修数 Tool 幂等，并使用独立只读查询验收。
 - FastAPI 工单、审批、时间线和 Playbook 接口。
-- 默认本地 Reasoner，可选支持 JSON Schema 与原生 Tool Calling 的真实 LLM 端点。
+- 默认本地 Reasoner，可选支持 DeepSeek JSON Output 或 OpenAI JSON Schema，以及原生 Tool Calling 的真实 LLM 端点。
 - 持久化有界任务队列、后台 Worker、租约与心跳、审批后重新入队。
 - 时长与模型预算、协作式取消、只读重试、依赖并发隔离和熔断。
 - 修复结果未知时只读对账；大证据归档与终态检查点保留期清理。
@@ -166,9 +166,10 @@ POST /demo/reset
 在项目根目录的 `.env` 中填写以下配置，启动时会自动读取：
 
 ```dotenv
-REPAIR_LLM_BASE_URL=https://your-provider.example/v1
-REPAIR_LLM_API_KEY=你的密钥
-REPAIR_LLM_MODEL=你的模型名称
+REPAIR_LLM_BASE_URL=https://api.deepseek.com
+REPAIR_LLM_API_KEY=你的DeepSeek_API密钥
+REPAIR_LLM_MODEL=deepseek-flash
+REPAIR_LLM_PROVIDER=auto
 ```
 
 本地已创建密钥留空的 `.env`，新环境可从 `.env.example` 复制。已有环境变量优先，修改文件后重启服务。完整说明见 [本地配置文件](docs/本地配置文件.md)。
@@ -225,7 +226,7 @@ HTTP 参数与路径、工具名及异常类型已同步更名，外部调用方
 
 ### 原生 Tool Calling 调查流程
 
-配置三个 `REPAIR_LLM_*` 参数后，问题提取和诊断使用 JSON Schema 结构化输出；只读调查使用 Chat Completions 的原生 `tools` / `tool_calls` 协议。
+配置三个 `REPAIR_LLM_*` 参数后，问题提取和诊断按服务商使用 JSON Schema 或 JSON Output，并用 Pydantic 校验；只读调查使用 Chat Completions 的原生 `tools` / `tool_calls` 协议。
 
 1. `agent/reasoning.py:plan_tool_call()` 将尚未查询的工具名称、用途和 `order_id` 参数 Schema 放入请求的 `tools` 字段，每轮最多选择一个工具。
 2. 模型返回 `tool_calls`，包含调用 ID、工具名称和 JSON 参数；普通消息且无工具调用表示调查结束。
@@ -238,3 +239,27 @@ HTTP 参数与路径、工具名及异常类型已同步更名，外部调用方
 相关契约与端到端流程测试见 `tests/test_tool_calling.py`；测试使用模拟 HTTP 响应，不调用付费模型 API。
 
 本地 Postman 调试、日志路径和查询方式见 [本地调试与日志](docs/本地调试与日志.md)。
+
+### DeepSeek 接入
+
+默认配置示例使用 DeepSeek 官方 Chat Completions：`https://api.deepseek.com`，模型 `deepseek-flash`。必须使用 DeepSeek API 密钥，OpenAI 密钥不能用于该服务。项目不会自动充值或申请密钥。
+
+DeepSeek 适配器独立位于 `repair_agent/agent/adapters/deepseek.py`，类名为 `DeepSeekReasoner`。它继承通用 HTTP 推理器，复用业务推理、工具校验、超时和预算处理，仅覆盖 DeepSeek 请求格式。`agent/adapters/__init__.py:create_reasoner()` 根据配置选择 `DeepSeekReasoner` 或原有 `HttpJsonReasoner`；原有推理器内没有 DeepSeek 分支。
+
+`REPAIR_LLM_PROVIDER=auto` 会按 `api.deepseek.com` 官方域名选择 DeepSeek 适配；如果通过公司网关访问 DeepSeek，应显式设置 `REPAIR_LLM_PROVIDER=deepseek`。其他地址默认保持 OpenAI 请求格式，也可以显式设为 `openai`。
+
+DeepSeek 的问题提取、诊断使用 `response_format={"type":"json_object"}`，系统提示中包含 JSON Schema 和格式示例；响应必须通过 Pydantic 类型校验，错误响应会回退规则。只读调查继续使用原生 `tools/tool_calls`，不发送稳定接口不支持的严格 Beta 模式及 OpenAI 专有并行参数，参数白名单与订单号校验仍在程序侧执行。默认明确设置 `thinking={"type":"disabled"}`，该 Demo 不启用思考模式。
+
+修改配置后重启服务；调用成功的日志应包含 `model response finish_reason=...` 和 `HttpJsonReasoner._request_message completed`，出现 `LLM ... fallback` 表示模型阶段未成功完成。
+
+官方说明：[首次调用](https://api-docs.deepseek.com/)、[JSON Output](https://api-docs.deepseek.com/zh-cn/guides/json_mode/)、[Chat Completions](https://api-docs.deepseek.com/zh-cn/api/create-chat-completion/)。模拟协议和工作流测试见 `tests/test_deepseek.py`。
+
+### 聊天工作台
+
+重启 `repair-agent-api` 后打开 `http://127.0.0.1:8000/`。在聊天框描述订单问题并附上 Order ID，按 Enter 或点击发送即可创建任务，页面自动查询后台进度。Shift + Enter 换行。
+
+左侧保留最近 100 个任务，点击可查看结果和处理过程。每个聊天对应一个独立修数任务；新问题点击“新建聊天”。审批任务可在结果卡片中批准或拒绝；批准会按原后端规则执行修复。模型和业务后端继续使用项目 `.env` 配置，浏览器不读取 API 密钥。
+
+缺少信息时，页面提供“补充完整信息，重新提交”，它会预填原问题并创建新任务，当前后端尚不支持恢复同一个缺信息任务。前端使用已有 `/cases`、任务进度和审批接口，不增加修数执行权限。
+
+页面源文件位于 `repair_agent/api/static/`，由 FastAPI 提供 HTML、CSS 和原生 JavaScript，无需额外前端构建或 Node 服务。CSS 支持窄屏布局。静态资源已纳入 Python 包数据。

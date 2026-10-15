@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from repair_agent.application.logging_setup import log_request_timing
+
 import os
 import logging
 import time
@@ -11,6 +13,8 @@ from repair_agent.application.logging_setup import LOG_CONTEXT
 from repair_agent.persistence.jobs import QueueFull
 
 from fastapi import FastAPI, HTTPException, Query, Response
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from repair_agent.api.schemas import ApprovalRequest, CaseResponse, CreateCaseRequest
 from repair_agent.domain.models import IssueType
@@ -46,6 +50,13 @@ def create_app(runtime: RepairRuntime | None = None) -> FastAPI:
         description="Evidence-driven LangGraph workflow with approval and durable audit.",
     )
     app.state.runtime = current
+    static_directory = Path(__file__).parent / "static"
+    app.mount("/assets", StaticFiles(directory=static_directory), name="frontend-assets")
+
+    @app.get("/", include_in_schema=False)
+    def chat_page():
+        return FileResponse(static_directory / "index.html")
+
 
     @app.middleware("http")
     async def request_logging(request, call_next):
@@ -54,8 +65,10 @@ def create_app(runtime: RepairRuntime | None = None) -> FastAPI:
         token = LOG_CONTEXT.set({'request_id': request_id})
         started = time.monotonic()
         logger = logging.getLogger(__name__)
+        http_status = None
         try:
             response = await call_next(request)
+            http_status = response.status_code
             response.headers['X-Request-ID'] = request_id
             logger.info('HTTP %s %s status=%s duration_ms=%.1f', request.method,
                         request.url.path, response.status_code, (time.monotonic()-started)*1000)
@@ -64,6 +77,9 @@ def create_app(runtime: RepairRuntime | None = None) -> FastAPI:
             logger.exception('HTTP %s %s failed', request.method, request.url.path)
             raise
         finally:
+            log_request_timing(record_type='http_request', method=request.method,
+                               path=request.url.path, http_status=http_status,
+                               duration_ms=round((time.monotonic()-started)*1000, 3))
             LOG_CONTEXT.reset(token)
 
 

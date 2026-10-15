@@ -27,13 +27,32 @@ def redact(text: str) -> str:
     return re.sub(r'(?i)((?:api[_-]?key|password|secret|access_token)\s*[=:]\s*)[^\s,;]+', r'\1[REDACTED]', text)
 
 
+def redact_fields(value):
+    """递归脱敏模型响应中的凭据字段，保持 JSON 结构与普通业务字段。"""
+    if isinstance(value, dict):
+        secret_names = {'api_key', 'apikey', 'authorization', 'password', 'secret',
+                        'access_token', 'refresh_token', 'token', 'private_key'}
+        return {key: '[REDACTED]' if str(key).lower().replace('-', '_') in secret_names
+                else redact_fields(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [redact_fields(item) for item in value]
+    if isinstance(value, str):
+        if value.lstrip().startswith(('{', '[')):
+            try:
+                return json.dumps(redact_fields(json.loads(value)), ensure_ascii=False)
+            except ValueError:
+                pass
+        return redact(value)
+    return value
+
+
 class DailyJsonHandler(logging.Handler):
     """按上海日期写入 logs/YYYY-MM-DD，跨午夜自动切换文件。"""
 
-    def __init__(self, directory: Path, errors_only: bool = False):
+    def __init__(self, directory: Path, errors_only: bool = False, *, filename: str | None = None):
         super().__init__(logging.ERROR if errors_only else logging.NOTSET)
         self.directory = directory
-        self.filename = 'error.log' if errors_only else 'agent.log'
+        self.filename = filename or ('error.log' if errors_only else 'agent.log')
 
     def emit(self, record):
         """只记录受控元数据，不记录请求体、证据内容及模型提示词。"""
@@ -46,7 +65,7 @@ class DailyJsonHandler(logging.Handler):
             if record.exc_info:
                 item['exception'] = logging.Formatter().formatException(record.exc_info)
             # 先脱敏字段再序列化，避免正则吞掉 JSON 的引号或括号。
-            item = {key: redact(value) if isinstance(value, str) else value for key, value in item.items()}
+            item = redact_fields(item)
             line = json.dumps(item, ensure_ascii=False, default=str)
             folder = self.directory / now.strftime('%Y-%m-%d')
             folder.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -70,9 +89,30 @@ def configure_logging() -> Path:
                 handler.close()
             root.addHandler(DailyJsonHandler(directory))
             root.addHandler(DailyJsonHandler(directory, True))
+        for name, filename in (('repair_agent.model_responses', 'model_responses.log'),
+                               ('repair_agent.request_timing', 'request_timing.log')):
+            logger = logging.getLogger(name)
+            handlers = [h for h in logger.handlers if isinstance(h, DailyJsonHandler)]
+            if not handlers or any(h.directory != directory for h in handlers):
+                for handler in handlers:
+                    logger.removeHandler(handler)
+                    handler.close()
+                logger.addHandler(DailyJsonHandler(directory, filename=filename))
+            logger.setLevel(logging.INFO)
+            logger.propagate = False
         root.setLevel(level)
         logging.getLogger('httpx').setLevel(logging.WARNING)
     return directory
+
+
+def log_model_response(**fields):
+    logging.getLogger('repair_agent.model_responses').info(
+        'model response', extra={'event_fields': fields})
+
+
+def log_request_timing(**fields):
+    logging.getLogger('repair_agent.request_timing').info(
+        'request timing', extra={'event_fields': fields})
 
 
 def traced(fn):
@@ -93,6 +133,8 @@ def traced(fn):
                 fields.update({k: value[k] for k in ('case_id', 'order_id') if value.get(k)})
         token = LOG_CONTEXT.set(fields)
         started = time.monotonic()
+        outcome = "completed"
+        summary = {}
         logger.info('%s started', fn.__qualname__)
         try:
             result = fn(*args, **kwargs)
@@ -104,11 +146,15 @@ def traced(fn):
                         extra={'event_fields': summary})
             return result
         except BaseException as exc:
+            outcome = "paused" if type(exc).__name__ in ("GraphInterrupt", "GraphBubbleUp") else "failed"
             if type(exc).__name__ in ('GraphInterrupt', 'GraphBubbleUp'):
                 logger.info('%s paused for approval', fn.__qualname__)
             elif isinstance(exc, Exception):
                 logger.exception('%s failed duration_ms=%.1f', fn.__qualname__, (time.monotonic()-started)*1000)
             raise
         finally:
+            if fn.__qualname__ in {'WorkerPool.run_job', 'RepairRuntime.create_case', 'RepairRuntime.decide_approval'}:
+                log_request_timing(record_type='task_run', function=fn.__qualname__,
+                                   duration_ms=round((time.monotonic()-started)*1000, 3), outcome=outcome, **summary)
             LOG_CONTEXT.reset(token)
     return wrapped
